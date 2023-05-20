@@ -24,7 +24,7 @@ class HorseshoeLayer(nn.Module):
         Args:
             in_features: int, number of input features
             out_features: int, number of output features
-            parameters: instance of class HorseshoeHyperparameters
+            parameters: inspip tance of class HorseshoeHyperparameters
             device: cuda device instance
         """
         super().__init__()
@@ -53,7 +53,7 @@ class HorseshoeLayer(nn.Module):
 
         # Initialization of parameters of variational distribution
         # weight parameters
-        self.beta_mean = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-scale, scale))
+        self.beta_mean = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-scale, scale.item()))
         self.beta_rho = nn.Parameter(torch.ones([out_features, in_features]) * parameters.beta_rho_scale)
         self.beta = ReparametrizedGaussian(self.beta_mean, self.beta_rho)
 
@@ -66,7 +66,7 @@ class HorseshoeLayer(nn.Module):
         # We initialize the parameters using a half-Cauchy because this
         # is the prior distribution over tau
         if parameters.log_tau_mean == None:
-            distr = HalfCauchy(1 / np.sqrt(self.prior_lambda_rate))
+            distr = HalfCauchy(1 / torch.sqrt(self.prior_lambda_rate))
             sample = distr.sample(torch.Size([in_features])).squeeze()
             self.log_tau_mean = nn.Parameter(torch.log(sample))
         else:
@@ -89,7 +89,7 @@ class HorseshoeLayer(nn.Module):
         # We initialize the parameters using a half-Cauchy because this
         # is the prior distribution ovev
         if parameters.log_v_mean == None:
-            distr = HalfCauchy(1 / np.sqrt(self.prior_theta_rate))
+            distr = HalfCauchy(1 / torch.sqrt(self.prior_theta_rate))
             sample = distr.sample()
             self.log_v_mean = nn.Parameter(torch.log(sample))
         else:
@@ -166,7 +166,7 @@ class HorseshoeLayer(nn.Module):
         # E_q[ln p(\lambda)] for the weights
         shape = self.prior_lambda_shape
         rate = self.prior_lambda_rate
-        log_inv_gammas_weight += exp_log_inverse_gamma(shape, rate, np.log(rate),
+        log_inv_gammas_weight += exp_log_inverse_gamma(shape, rate, torch.log(rate),
                                                        exp_log_lambda, exp_lambda_inverse)
 
         # E_q[ln p(v | \theta)] for the global shrinkage parameter
@@ -181,7 +181,7 @@ class HorseshoeLayer(nn.Module):
         # E_q[ln p(\theta)] for the global shrinkage parameter
         shape = self.prior_theta_shape
         rate = self.prior_theta_rate
-        log_inv_gammas_global += exp_log_inverse_gamma(shape, rate, np.log(rate),
+        log_inv_gammas_global += exp_log_inverse_gamma(shape, rate, torch.log(rate),
                                                        exp_log_theta, exp_theta_inverse)
 
         # Add all expectations
@@ -290,7 +290,7 @@ class BayesianLayer(nn.Module):
 
         # Scale to initialize weights, according to Yingzhen's work
         if parameters.bayesian_scale == None:
-            scale = 1. * np.sqrt(6. / (in_features + out_features))
+            scale = 1. * torch.sqrt(6. / (in_features + out_features))
         else:
             scale = parameters.bayesian_scale
 

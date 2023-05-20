@@ -75,8 +75,13 @@ class GaussianBNN(nn.Module, Model):
         self.train_writer = SummaryWriter(path + '/train')
         self.test_writer = SummaryWriter(path + '/test')
 
-        self.l1 = BayesianLayer(self.hyperparams.n_features, self.hyperparams.n_hidden_units, self.hyperparams, device)
-        self.l2 = BayesianLayer(self.hyperparams.n_hidden_units, 1, self.hyperparams, device)
+        self.l1 = BayesianLayer(self.hyperparams.n_features, self.hyperparams.n_hidden_units[0], self.hyperparams, device)
+        self.l2 = []
+        for i, k in enumerate(self.hyperparams.n_hidden_units[1:]):
+            self.l2.append(BayesianLayer(self.hyperparams.n_hidden_units[i-1], k, self.hyperparams, device))
+
+        self.last_layer = BayesianLayer(self.hyperparams.n_hidden_units[-1], 1, self.hyperparams, device)
+
         self.log_var_noise = torch.log(torch.Tensor([self.hyperparams.var_noise]))
 
     def initialize(self, n_features):
@@ -88,7 +93,9 @@ class GaussianBNN(nn.Module, Model):
 
     def forward(self, x, sample, n_samples):
         x = F.relu(self.l1.forward(x, n_samples=n_samples))
-        x = self.l2.forward(x, n_samples=n_samples)
+        for layer in self.l2:
+            x = F.relu(layer.forward(x, n_samples=n_samples))
+        x = self.last_layer.forward(x, n_samples=n_samples)
         return x
 
     def log_prior(self):
@@ -96,8 +103,9 @@ class GaussianBNN(nn.Module, Model):
         Calculates the logarithm of the current
         value of the prior distribution over the weights
         """
-        return self.l1.log_prior \
-               + self.l2.log_prior
+        return self.l1.log_prior() \
+               + sum([layer.log_prior for layer in self.l2]) \
+                + self.last_layer.log_prior
 
     def log_variational_posterior(self):
         """
@@ -105,8 +113,9 @@ class GaussianBNN(nn.Module, Model):
         of the variational posterior distribution over the weights
         """
 
-        return self.l1.log_variational_posterior \
-               + self.l2.log_variational_posterior
+        return self.l1.log_variational_posterior() \
+               + sum([layer.log_variational_posterior for layer in self.l2]) \
+                + self.last_layer.log_variational_posterior
 
     def sample_elbo(self, input_, target, dataset_size):
         """
@@ -249,7 +258,7 @@ class GaussianBNN(nn.Module, Model):
                 ensemble_outputs = ensemble_outputs.reshape(n_samples_testing, test_batch_size).t()
 
                 # calculation of the predictive log likelihood of a batch, see notes from 18.12.18
-                var_noise = np.exp(self.log_var_noise.detach().numpy()) * std_y_train ** 2
+                var_noise = np.exp(self.log_var_noise.cpu().numpy()) * std_y_train ** 2
 
                 if self.hyperparams.classification:
                     loglike_factor = - F.binary_cross_entropy_with_logits(ensemble_outputs, target.reshape(-1,1).repeat(1,n_samples_testing), reduction='none')
@@ -298,7 +307,7 @@ class GaussianBNN(nn.Module, Model):
                 self.test_writer.add_scalar('errors__rmse', rmse, epoch)
 
 
-        return predicted_distr, rmse, mae, -loglike
+        return predicted_distr, rmse, mae, -loglike, ensemble_outputs
 
 
 class HorseshoeBNN(GaussianBNN):
@@ -314,8 +323,14 @@ class HorseshoeBNN(GaussianBNN):
         self.train_writer = SummaryWriter(path + '/train')
         self.test_writer = SummaryWriter(path + '/test')
 
-        self.l1 = HorseshoeLayer(self.hyperparams.n_features, self.hyperparams.n_hidden_units, self.hyperparams, device)
-        self.l2 = BayesianLayer(self.hyperparams.n_hidden_units, 1, self.hyperparams, device)
+        self.l1 = HorseshoeLayer(self.hyperparams.n_features, self.hyperparams.n_hidden_units[0], self.hyperparams, device)
+
+        self.l2 = []
+        for i, k in enumerate(self.hyperparams.n_hidden_units[1:]):
+            self.l2.append(BayesianLayer(self.hyperparams.n_hidden_units[i-1], k, self.hyperparams, device))
+
+        self.last_layer = BayesianLayer(self.hyperparams.n_hidden_units[-1], 1, self.hyperparams, device)
+
         self.log_var_noise = torch.log(torch.Tensor([self.hyperparams.var_noise]))
 
     def initialize(self, n_features):
@@ -331,15 +346,17 @@ class HorseshoeBNN(GaussianBNN):
         value of the prior distribution over the weights
         """
         return self.l1.log_prior() \
-               + self.l2.log_prior / n_samples
+               + sum([layer.log_prior for layer in self.l2]) / n_samples \
+               + self.last_layer.log_prior / n_samples
 
     def log_variational_posterior(self, n_samples):
         """
         Calculates the logarithm of the current value
         of the variational posterior distribution over the weights
         """
-        return self.l1.log_variational_posterior() \
-               + self.l2.log_variational_posterior / n_samples \
+        return  self.l1.log_variational_posterior() \
+                + sum([layer.log_variational_posterior for layer in self.l2]) / n_samples \
+                + self.last_layer.log_variational_posterior / n_samples
 
     def analytic_update(self):
         """

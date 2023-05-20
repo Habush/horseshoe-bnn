@@ -27,7 +27,7 @@ class PytorchDataset(data.Dataset):
         return features, label
 
 
-def dataset_to_dataloader(dataset, batch_size=100, drop_last=False, shuffle=True):
+def dataset_to_dataloader(dataset, batch_size=100, drop_last=True, shuffle=True):
     """
     Transforms an instance of the Dataset class into a Pytorch Dataset and then
     into a Pytorch Dataloader
@@ -38,7 +38,8 @@ def dataset_to_dataloader(dataset, batch_size=100, drop_last=False, shuffle=True
     dataloader = data.DataLoader(py_dataset,
                                  batch_size=batch_size,
                                  drop_last=drop_last,
-                                 shuffle=shuffle)
+                                 shuffle=shuffle,
+                                 generator=torch.Generator(device="cuda"))
 
     return dataloader
 
